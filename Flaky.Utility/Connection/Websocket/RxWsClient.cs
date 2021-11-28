@@ -12,37 +12,63 @@ using System.Threading.Tasks;
 
 namespace Flaky.Utility.Connection.Websocket
 {
-    public class RxWsClient
+    public class RxWsClient: IDisposable
+#if NET5_0_OR_GREATER
+        , IAsyncDisposable
+#endif
     {
         private readonly ILogger _log;
-        private ClientWebSocket WsClient { get; set; }
+        private ClientWebSocket _wsClient;
         private CancellationTokenSource _cts;
 
-        private readonly Subject<WebSocketState> _websocketStateObservable;
+        private readonly BehaviorSubject<WebSocketState> _websocketStateObservable;
         private readonly Subject<Exception> _exceptionSubject;
         private readonly Subject<string> _requestSubject;
         private readonly Subject<string> _responseSubject;
 
         private IDisposable _requestSub;
-
+        private bool disposedValue;
 
         public IObservable<WebSocketState> WebsocketStateObservable => _websocketStateObservable;
         public IObservable<Exception> ExceptionObservable => _exceptionSubject;
         public IObserver<string> RequestObserver => _requestSubject;
         public IObservable<string> ResponseObservable => _responseSubject;
-        public WebSocketState WebSocketState => WsClient.State;
+        public WebSocketState WebSocketState => _wsClient.State;
         public string RemoteUrl { get; set; }
         public int BufferSize { get; }
 
-        public RxWsClient(string remote, int bufferSize = 1024, ILogger log = null)
+
+        public RxWsClient(string remote, int bufferSize = 1024, ILoggerFactory loggerFactory = null) : this(remote, bufferSize)
+        {
+            _log = loggerFactory != null
+                ? loggerFactory.CreateLogger("RxWsClient")
+                : NullLogger.Instance;
+        }
+
+
+        //public RxWsClient(string remote, int bufferSize = 1024, ILogger<RxWsClient> log = null) : this(remote, bufferSize)
+        //{
+        //    if (log == null)
+        //    {
+        //        _log = NullLogger.Instance;
+        //    }
+        //    _log = log;
+        //}
+
+        public RxWsClient(string remote, int bufferSize = 1024,ILogger log = null):this(remote, bufferSize)
         {
             _log = log ?? NullLogger.Instance;
+        }
+
+
+        public RxWsClient(string remote, int bufferSize = 1024)
+        {
             RemoteUrl = remote;
             BufferSize = bufferSize;
 
             _requestSubject = new Subject<string>();
             _responseSubject = new Subject<string>();
-            _websocketStateObservable = new Subject<WebSocketState>();
+            _websocketStateObservable = new BehaviorSubject<WebSocketState>(WebSocketState.None);
             _exceptionSubject = new Subject<Exception>();
         }
 
@@ -51,11 +77,13 @@ namespace Flaky.Utility.Connection.Websocket
         public async Task ConnectAsync()
         {
             
-            WsClient = new ClientWebSocket();
+            _wsClient = new ClientWebSocket();
             var serverUri = new Uri(RemoteUrl);
             _cts = new CancellationTokenSource();
-            await WsClient
+            await _wsClient
                 .ConnectAsync(serverUri, _cts.Token)
+                
+
                 .ContinueWith(async t =>
                 {
 #if NET5_0_OR_GREATER
@@ -66,6 +94,7 @@ namespace Flaky.Utility.Connection.Websocket
                         if (WebSocketState == WebSocketState.Open)
                         {
                             await Echo();
+                            return;
                         }
                     }
                     else if (t.IsFaulted || t.IsCanceled || t.IsCompleted)
@@ -73,16 +102,20 @@ namespace Flaky.Utility.Connection.Websocket
                         if (t.Exception != null)
                         {
                             _log.LogError("Exception: {e}", t.Exception);
+                            _exceptionSubject.OnNext(t.Exception);
+                            return;
                         }
                         _websocketStateObservable.OnNext(WebSocketState);
+                        return;
                     }
-                    
+
 #elif NETSTANDARD2_0
                     if (t.IsCompleted)
 	                {
                         if (WebSocketState == WebSocketState.Open)
                             {
                                 await Echo();
+                                return;
                             }
 	                }
                     else if (t.IsFaulted || t.IsCanceled)
@@ -90,18 +123,16 @@ namespace Flaky.Utility.Connection.Websocket
                         if (t.Exception != null)
                         {
                             _log.LogError("Exception: {e}", t.Exception);
+                            _exceptionSubject.OnNext(t.Exception);
+                            return;
                         }
                     }
-                    _websocketStateObservable.OnNext(WebSocketState);    
+                    _websocketStateObservable.OnNext(WebSocketState);
+                    return;
 #else
 #error This code block does not match csproj TargetFrameworks list
 #endif
                 });
-
-            //if (WebSocketState == WebSocketState.Open)
-            //{
-            //    await Echo();
-            //}
         }
 
         public void Close() => CloseAsync().Wait();
@@ -112,30 +143,32 @@ namespace Flaky.Utility.Connection.Websocket
             {
                 if (WebSocketState != WebSocketState.Open) return;
                 _requestSub?.Dispose();
-                _cts.Cancel();
-                await WsClient.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
-
+                await _wsClient.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", _cts.Token);
+                Task.Delay(1000).Wait();
+                //_cts.Cancel();
+                //await _wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
             }
             catch (Exception e)
             {
                 _log.LogError("Exception: {e}", e);
-                _exceptionSubject.OnNext(e);
+                _exceptionSubject?.OnNext(e);
+                return;
             }
         }
 
         private async Task Send(string request)
         {
-            //if (_isLogRequestResponse) _log.Verbose("Send request: {request}", request);
             try
             {
                 var encoded = Encoding.UTF8.GetBytes(request);
                 var buffer = new ArraySegment<byte>(encoded, 0, encoded.Length);
-                await WsClient.SendAsync(buffer, WebSocketMessageType.Text, true, _cts.Token);
+                await _wsClient.SendAsync(buffer, WebSocketMessageType.Text, true, _cts.Token);
             }
             catch (Exception e)
             {
                 _log.LogError("Exception: {e}", e);
                 _exceptionSubject.OnNext(e);
+                return;
             }
         }
 
@@ -157,11 +190,18 @@ namespace Flaky.Utility.Connection.Websocket
                 while (WebSocketState == WebSocketState.Open || WebSocketState == WebSocketState.CloseSent)
                 {
                     var bytesReceived = new ArraySegment<byte>(buffer, offset, free);
-                    var result = await WsClient.ReceiveAsync(bytesReceived, CancellationToken.None);
+                    var result = await _wsClient.ReceiveAsync(bytesReceived, _cts.Token);
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        _log.LogInformation("A receive has completed because a close message was received.");
+                        using (_log.BeginScope(new Dictionary<string, object>
+                        {
+                            ["method"] = nameof(Echo),
+                        }))
+                        {
+                            _log.LogInformation("A receive has completed because a close message was received.");
+                        }
+
                         break;
                     }
 
@@ -194,5 +234,83 @@ namespace Flaky.Utility.Connection.Websocket
                 _exceptionSubject.OnNext(e);
             }
         }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    // TODO: dispose managed state (managed objects)
+                    Close();
+                    _responseSubject?.OnCompleted();
+                    _responseSubject?.Dispose();
+                    _websocketStateObservable?.OnCompleted();
+                    _websocketStateObservable?.Dispose();
+                    _exceptionSubject?.OnCompleted();
+                    _exceptionSubject?.Dispose();
+                    _requestSubject.OnCompleted();
+                    _requestSubject?.Dispose();
+                    _cts?.Cancel();
+                    _wsClient?.Dispose();
+                }
+
+                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+                // TODO: set large fields to null
+                disposedValue = true;
+            }
+        }
+
+        // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+        // ~RxWsClient()
+        // {
+        //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        //     Dispose(disposing: false);
+        // }
+
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+            Dispose(disposing: true);
+            //GC.SuppressFinalize(this);
+            _log.LogDebug("RxWsClient Dispose complete");
+        }
+
+
+#if NET5_0_OR_GREATER
+        public async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncInternal(disposing: true);
+            //GC.SuppressFinalize(this);
+            _log.LogDebug("RxWsClient DisposeAsync complete");
+        }
+
+        protected virtual async ValueTask DisposeAsyncInternal(bool disposing)
+        {
+            // Async cleanup mock
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    // TODO: dispose managed state (managed objects)
+                    await CloseAsync();
+                    _responseSubject?.OnCompleted();
+                    _responseSubject?.Dispose();
+                    _websocketStateObservable?.OnCompleted();
+                    _websocketStateObservable?.Dispose();
+                    _exceptionSubject?.OnCompleted();
+                    _exceptionSubject?.Dispose();
+                    _requestSubject.OnCompleted();
+                    _requestSubject?.Dispose();
+                    _cts?.Cancel();
+                    _wsClient.Dispose();
+                }
+
+                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+                // TODO: set large fields to null
+                disposedValue = true;
+            }
+        }
+#endif
     }
 }

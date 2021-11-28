@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Flaky.Utility/Connection/Tcp/RxTcpPublishService.cs
+/.vscode
