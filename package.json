@@ -1,12 +1,37 @@
 {
   "name": "flaky.utility",
   "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {},
   "devDependencies": {
-    "cz-conventional-changelog": "^3.3.0"
+    "cz-conventional-changelog": "^3.3.0",
+    "semantic-release": "^17.2.1"
   },
+
   "config": {
     "commitizen": {
       "path": "./node_modules/cz-conventional-changelog"
     }
+  },
+
+  "release": {
+    "branches": [
+      "master",
+      "next"
+    ],
+    "plugins": [
+      "@semantic-release/changelog",
+      "@semantic-release/git",
+      "@semantic-release/github",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": false
+        }
+      ]
+    ],
+    "repositoryUrl": "https://github.com/hipo760/Flaky.Utility.git",
+    "debug": "true"
   }
 }
