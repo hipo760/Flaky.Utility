@@ -9,11 +9,13 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.1" />
+    <PackageReference Include="Flaky.Utility" Version="1.0.3" />
+    <PackageReference Include="Flaky.Utility.Serilog" Version="1.0.3" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!--<ItemGroup>
     <ProjectReference Include="..\Flaky.Utility.Serilog\Flaky.Utility.Serilog.csproj" />
     <ProjectReference Include="..\Flaky.Utility\Flaky.Utility.csproj" />
-  </ItemGroup>
+  </ItemGroup>-->
 
 </Project>
