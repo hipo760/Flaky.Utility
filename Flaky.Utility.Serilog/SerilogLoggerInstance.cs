@@ -79,23 +79,27 @@ namespace Flaky.Utility.Serilog
 
 
         public static LoggerConfiguration ComplexFileLoggersConfiguration(
-            string logFilePath = null
+            string logFileName = null
             , LogEventLevel level = LogEventLevel.Verbose
             , int retainedFileCountLimit = 10
 
         )
-            => ClefFileLoggerConfiguration(logFilePath,level,retainedFileCountLimit)
-                    //.Enrich.WithCaller()
-                    .WriteTo
-                    .Async(a =>
-                    {
-                        a.File(
-                            logFilePath ?? "Logger_.log",
-                            level,
-                            rollingInterval: RollingInterval.Day,
-                            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffffz}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message}{NewLine}{Exception}");
-                    })
-                ;
-
+        {
+            var clefFile = logFileName ?? "logger" + "_.clef";
+            var logFile = logFileName ?? "logger" + "_.log";
+            
+            return ClefFileLoggerConfiguration(clefFile, level, retainedFileCountLimit)
+                //.Enrich.WithCaller()
+                .WriteTo
+                .Async(a =>
+                {
+                    a.File(
+                        logFile,
+                        level,
+                        rollingInterval: RollingInterval.Day,
+                        outputTemplate:
+                        "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffffz}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message}{NewLine}{Exception}");
+                });
+        }
     }
 }
