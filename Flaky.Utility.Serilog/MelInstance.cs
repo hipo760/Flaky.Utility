@@ -16,7 +16,17 @@ namespace Flaky.Utility.Serilog
             , LogEventLevel level = LogEventLevel.Verbose
             , int retainedFileCountLimit = 10)
         {
-            var fileLogger = SerilogLoggerInstance.FileLogger();
+            var fileLogger = SerilogLoggerInstance.ComplexFileLoggers(logFilePath: logFilePath, level: level, retainedFileCountLimit: retainedFileCountLimit);
+            var loggerFactory = new LoggerFactory();
+            return loggerFactory.AddSerilog(fileLogger);
+        }
+
+        public static ILoggerFactory ClefFileLoggerFactory(
+            string logFilePath = null
+            , LogEventLevel level = LogEventLevel.Verbose
+            , int retainedFileCountLimit = 10)
+        {
+            var fileLogger = SerilogLoggerInstance.ClefFileLogger(logFilePath:logFilePath,level:level,retainedFileCountLimit:retainedFileCountLimit);
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddSerilog(fileLogger);
             return loggerFactory;

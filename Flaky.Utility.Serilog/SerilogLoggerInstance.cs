@@ -11,14 +11,22 @@ namespace Flaky.Utility.Serilog
     {
         public static ILogger ConsoleLogger() => ConsoleLoggerConfiguration().CreateLogger();
 
-        public static ILogger FileLogger(
+        public static ILogger ComplexFileLoggers(
+            string logFilePath = null
+            , LogEventLevel level = LogEventLevel.Verbose
+            //, string template = "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] ({ThreadId}) [{SourceContext}] {Message}{NewLine}{Exception}"
+            , int retainedFileCountLimit = 10
+            ) 
+            =>ComplexFileLoggersConfiguration(logFilePath, level, retainedFileCountLimit).CreateLogger();
+
+        public static ILogger ClefFileLogger(
             string logFilePath = null
             , LogEventLevel level = LogEventLevel.Verbose
             //, string template = "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level}] ({ThreadId}) [{SourceContext}] {Message}{NewLine}{Exception}"
             , int retainedFileCountLimit = 10
             )
             //=> FileLoggerConfiguration(logFilePath, level, template).CreateLogger();
-            => FileLoggerConfiguration(logFilePath, level).CreateLogger();
+            => ClefFileLoggerConfiguration(logFilePath, level, retainedFileCountLimit).CreateLogger();
 
         public static ILogger ConfiguredLogger(IConfiguration loggerConfiguration)
         {
@@ -38,11 +46,11 @@ namespace Flaky.Utility.Serilog
                 .Enrich.WithThreadId()
             .WriteTo
             .Async(a => a.Console(
-                    formatter: new CompactJsonFormatter(),
-                    LogEventLevel.Verbose));
-                    //outputTemplate: "{Timestamp:o}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message:lj}{NewLine}{Exception}"));
+                    //formatter: new CompactJsonFormatter(),
+                    LogEventLevel.Verbose,
+                    outputTemplate: "{Timestamp:o}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message:lj}{NewLine}{Exception}"));
 
-        public static LoggerConfiguration FileLoggerConfiguration(
+        public static LoggerConfiguration ClefFileLoggerConfiguration(
             string logFilePath = null
             , LogEventLevel level = LogEventLevel.Verbose
             //, string template = "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffffz}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message}{NewLine}{Exception}"
@@ -58,17 +66,36 @@ namespace Flaky.Utility.Serilog
                     .Enrich.FromLogContext()
                     //.Enrich.WithCaller()
                     .Enrich.WithThreadId()
-
                     .WriteTo
                     .Async(a =>
                     {
                         a.File(
                             formatter: new CompactJsonFormatter(),
-                            logFilePath ?? "Logger_.log",
+                            logFilePath ?? "Logger_.clef",
                             level,
                             rollingInterval: RollingInterval.Day,
                             retainedFileCountLimit: retainedFileCountLimit);
-                            //outputTemplate: template);
                     });
+
+
+        public static LoggerConfiguration ComplexFileLoggersConfiguration(
+            string logFilePath = null
+            , LogEventLevel level = LogEventLevel.Verbose
+            , int retainedFileCountLimit = 10
+
+        )
+            => ClefFileLoggerConfiguration(logFilePath,level,retainedFileCountLimit)
+                    //.Enrich.WithCaller()
+                    .WriteTo
+                    .Async(a =>
+                    {
+                        a.File(
+                            logFilePath ?? "Logger_.log",
+                            level,
+                            rollingInterval: RollingInterval.Day,
+                            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffffz}[{Level}][{ThreadId}][{SourceContext}][{Properties:j}] {Message}{NewLine}{Exception}");
+                    })
+                ;
+
     }
 }
